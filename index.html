@@ -292,6 +292,13 @@
           <button class="pill" data-filter="recent">Recently Played</button>
           <button class="pill" data-filter="top">Top Tracks</button>
         </div>
+        <div class="search-row" style="margin-bottom:0.75rem;">
+          <select id="lib-sort" class="search-input" style="flex:0;min-width:160px;">
+            <option value="default">Sort: Default</option>
+            <option value="az">Sort: A → Z</option>
+            <option value="za">Sort: Z → A</option>
+          </select>
+        </div>
         <div id="lib-sel-bar" style="display:none" class="selection-bar">
           <span class="sel-count"><span id="lib-sel-count">0</span> selected</span>
           <div class="sel-actions">
@@ -396,7 +403,7 @@ document.getElementById('redirect-uri-display').textContent = REDIRECT_URI;
 const SCOPES = 'user-library-read user-read-recently-played user-top-read playlist-read-private playlist-modify-public playlist-modify-private user-read-email user-read-private';
 
 let accessToken = null, userId = null, userPlaylists = [];
-let libOffset = 0, libFilter = 'liked', libTracks = [], libSelected = new Set();
+let libOffset = 0, libFilter = 'liked', libSort = 'default', libTracks = [], libSelected = new Set();
 let srchTracks = [], srchSelected = new Set();
 
 // Storage helpers
@@ -476,10 +483,16 @@ async function loadLibrary(append=false) {
       tracks = d.items.filter(Boolean);
     }
     libTracks = append ? [...libTracks,...tracks] : tracks;
-    renderTracks('lib-list', libTracks, 'lib');
+    renderTracks('lib-list', sortedLibTracks(), 'lib');
     setStatus('lib-status', libTracks.length+' tracks');
   } catch(e) { setStatus('lib-status','Error: '+e.message,'error'); }
   loader('lib-loader', false);
+}
+
+function sortedLibTracks() {
+  if (libSort === 'az') return [...libTracks].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  if (libSort === 'za') return [...libTracks].sort((a,b) => (b.name||'').localeCompare(a.name||''));
+  return libTracks;
 }
 
 function renderTracks(cid, tracks, prefix) {
@@ -536,7 +549,7 @@ async function addToPlaylist(plId, plName, prefix) {
     await api('/playlists/'+plId+'/tracks',{method:'POST',body:JSON.stringify({uris:uris.slice(0,100)})});
     setStatus(sid,uris.length+' track(s) added to "'+plName+'"','success');
     sel.clear(); updateSelBar(prefix);
-    renderTracks(prefix==='lib'?'lib-list':'srch-list', prefix==='lib'?libTracks:srchTracks, prefix);
+    renderTracks(prefix==='lib'?'lib-list':'srch-list', prefix==='lib'?sortedLibTracks():srchTracks, prefix);
     loadPlaylists();
   } catch(e) { setStatus(sid,'Error: '+e.message,'error'); }
   document.getElementById(prefix==='lib'?'lib-pl-panel':'srch-pl-panel').style.display='none';
@@ -654,9 +667,10 @@ document.getElementById('client-id-input').addEventListener('keydown', e => { if
 document.getElementById('btn-logout').addEventListener('click', () => { store.del('sp_tok'); store.del('sp_exp'); showScreen('login'); });
 document.querySelectorAll('.sidebar-btn').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 document.getElementById('library-pills').addEventListener('click', e => { const pill=e.target.closest('.pill'); if(!pill) return; document.querySelectorAll('#library-pills .pill').forEach(p=>p.classList.remove('active')); pill.classList.add('active'); libFilter=pill.dataset.filter; loadLibrary(); });
+document.getElementById('lib-sort').addEventListener('change', e => { libSort=e.target.value; renderTracks('lib-list', sortedLibTracks(), 'lib'); });
 document.getElementById('lib-more').addEventListener('click', () => loadLibrary(true));
 document.getElementById('lib-add-btn').addEventListener('click', () => showPlPanel('lib'));
-document.getElementById('lib-clear-btn').addEventListener('click', () => { libSelected.clear(); updateSelBar('lib'); renderTracks('lib-list',libTracks,'lib'); });
+document.getElementById('lib-clear-btn').addEventListener('click', () => { libSelected.clear(); updateSelBar('lib'); renderTracks('lib-list',sortedLibTracks(),'lib'); });
 document.getElementById('btn-search').addEventListener('click', doSearch);
 document.getElementById('search-input').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
 document.getElementById('srch-add-btn').addEventListener('click', () => showPlPanel('srch'));
