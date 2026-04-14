@@ -749,6 +749,21 @@ async function createPlaylist() {
 
 // WORD PLAYLIST
 let wordTracks = [];
+let cachedLibrary = null;
+
+async function loadFullLibrary() {
+  if (cachedLibrary) return cachedLibrary;
+  setStatus('word-status', 'Scanning your liked songs...');
+  let all = [], offset = 0;
+  while (true) {
+    const d = await api('/me/tracks?limit=50&offset=' + offset);
+    all = all.concat(d.items.map(i => i.track).filter(Boolean));
+    if (!d.next) break;
+    offset += 50;
+  }
+  cachedLibrary = all;
+  return all;
+}
 
 async function generateWordPlaylist() {
   const raw = document.getElementById('word-input').value.trim();
@@ -762,8 +777,23 @@ async function generateWordPlaylist() {
   document.getElementById('word-results').innerHTML = '';
   document.getElementById('btn-save-word-pl').style.display = 'none';
 
+  let library = [];
+  try { library = await loadFullLibrary(); } catch(e) {}
+
   const usedIds = new Set();
   for (const letter of letters) {
+    // 1. Search liked songs first
+    const libMatch = library.find(t =>
+      t && t.name && t.name[0].toUpperCase() === letter && !usedIds.has(t.id)
+    );
+    if (libMatch) {
+      usedIds.add(libMatch.id);
+      wordTracks.push({ letter, track: libMatch });
+      continue;
+    }
+
+    // 2. Fall back to Spotify-wide search
+    setStatus('word-status', 'Searching Spotify for ' + letter + '...');
     try {
       const d = await api('/search?q=' + encodeURIComponent(letter) + '&type=track&limit=50');
       const matches = (d.tracks?.items || []).filter(t =>
