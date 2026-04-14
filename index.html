@@ -827,6 +827,7 @@ function renderWordResults() {
   wordTracks.forEach((w, i) => {
     const div = document.createElement('div');
     div.className = 'word-result-row';
+    div.dataset.pos = i;
     const track = w.matches[w.idx] || null;
     if (track) {
       const art = track.album?.images?.[2]?.url || track.album?.images?.[0]?.url;
@@ -840,10 +841,6 @@ function renderWordResults() {
         + (w.matches.length > 1 ? '<span class="word-match-count">' + (w.idx + 1) + '/' + w.matches.length + '</span>' : '')
         + (w.matches.length > 1 ? '<button class="btn-swap" title="Try another song">↻</button>' : '')
         + '<button class="track-play-btn' + (track.preview_url ? '' : ' no-preview') + '" data-track-id="' + esc(track.id) + '" title="' + (track.preview_url ? 'Play 30s preview' : 'No preview available') + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
-      const pb = div.querySelector('.track-play-btn');
-      if (pb && track.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(track); });
-      const sb = div.querySelector('.btn-swap');
-      if (sb) sb.addEventListener('click', e => { e.stopPropagation(); w.idx = (w.idx + 1) % w.matches.length; renderWordResults(); });
     } else {
       div.innerHTML = '<span class="word-letter" style="opacity:0.35">' + w.letter + '</span>'
         + '<span class="word-arrow" style="opacity:0.35">→</span>'
@@ -926,6 +923,19 @@ document.getElementById('progress-bar').addEventListener('click', e => { if (!au
 document.getElementById('btn-gen-word').addEventListener('click', generateWordPlaylist);
 document.getElementById('word-input').addEventListener('keydown', e => { if (e.key === 'Enter') generateWordPlaylist(); });
 document.getElementById('btn-save-word-pl').addEventListener('click', saveWordPlaylist);
+document.getElementById('word-results').addEventListener('click', e => {
+  const row = e.target.closest('[data-pos]');
+  if (!row) return;
+  const w = wordTracks[parseInt(row.dataset.pos)];
+  if (!w) return;
+  if (e.target.closest('.btn-swap')) {
+    w.idx = (w.idx + 1) % w.matches.length;
+    renderWordResults();
+  } else if (e.target.closest('.track-play-btn:not(.no-preview)')) {
+    const track = w.matches[w.idx];
+    if (track) playTrack(track);
+  }
+});
 document.getElementById('btn-connect').addEventListener('click', startAuth);
 document.getElementById('client-id-input').addEventListener('keydown', e => { if(e.key==='Enter') startAuth(); });
 document.getElementById('btn-logout').addEventListener('click', () => { store.del('sp_tok'); store.del('sp_exp'); showScreen('login'); });
