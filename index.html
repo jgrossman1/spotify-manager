@@ -205,6 +205,31 @@
     .sidebar { display: none; }
     .form-grid { grid-template-columns: 1fr; }
   }
+
+  /* Player bar */
+  #player-bar { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 72px; background: var(--surface); border-top: 1px solid var(--border2); z-index: 20; padding: 0 1.5rem; align-items: center; gap: 16px; }
+  #player-bar.visible { display: flex; }
+  .player-art { width: 48px; height: 48px; border-radius: 4px; background: var(--surface3); flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .player-art img { width: 100%; height: 100%; object-fit: cover; }
+  .player-art svg { width: 20px; height: 20px; fill: var(--text3); }
+  .player-info { flex: 1; min-width: 0; }
+  .player-track-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-track-artist { font-size: 12px; color: var(--text2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .play-pause-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--green); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s; flex-shrink: 0; }
+  .play-pause-btn:hover { background: var(--green-dark); }
+  .play-pause-btn svg { width: 18px; height: 18px; fill: white; }
+  .player-progress { flex: 2; display: flex; align-items: center; gap: 10px; min-width: 100px; }
+  .progress-bar { flex: 1; height: 4px; background: var(--surface3); border-radius: 2px; cursor: pointer; }
+  .progress-fill { height: 100%; background: var(--green); border-radius: 2px; width: 0%; }
+  .player-time { font-size: 11px; color: var(--text3); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .preview-badge { font-size: 10px; color: var(--text3); white-space: nowrap; flex-shrink: 0; padding: 3px 7px; border: 1px solid var(--border); border-radius: 999px; }
+
+  /* Play button on track items */
+  .track-play-btn { width: 28px; height: 28px; border-radius: 50%; background: none; border: 1px solid var(--border2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; color: var(--text2); }
+  .track-play-btn:hover { background: var(--green); border-color: var(--green); color: white; }
+  .track-play-btn.playing { background: var(--green); border-color: var(--green); color: white; }
+  .track-play-btn.no-preview { opacity: 0.25; cursor: not-allowed; pointer-events: none; }
+  .track-play-btn svg { width: 12px; height: 12px; fill: currentColor; }
 </style>
 </head>
 <body>
@@ -394,6 +419,24 @@
 
     </div>
   </div>
+
+  <!-- PLAYER BAR -->
+  <div id="player-bar">
+    <div class="player-art" id="player-art"><svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>
+    <div class="player-info">
+      <div class="player-track-name" id="player-track-name">—</div>
+      <div class="player-track-artist" id="player-track-artist">—</div>
+    </div>
+    <button class="play-pause-btn" id="btn-play-pause">
+      <svg id="pp-icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div class="player-progress">
+      <span class="player-time" id="player-current">0:00</span>
+      <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <span class="player-time" id="player-duration">0:30</span>
+    </div>
+    <span class="preview-badge">30s preview</span>
+  </div>
 </div>
 
 <script>
@@ -506,9 +549,14 @@ function renderTracks(cid, tracks, prefix) {
       +(art?'<img class="track-art" src="'+art+'" />':'<div class="track-art-ph">'+musicNote+'</div>')
       +'<div class="track-info"><div class="track-name">'+esc(t.name)+'</div><div class="track-artist">'+esc(t.artists?.map(a=>a.name).join(', '))+' · '+esc(t.album?.name||'')+'</div></div>'
       +(t.explicit?'<span class="track-explicit">E</span>':'')
-      +'<span class="track-duration">'+ms2time(t.duration_ms)+'</span>';
-    d.addEventListener('click',()=>toggleTrack(t.id,prefix,d)); c.appendChild(d);
+      +'<span class="track-duration">'+ms2time(t.duration_ms)+'</span>'
+      +'<button class="track-play-btn'+(t.preview_url?'':' no-preview')+'" data-track-id="'+esc(t.id)+'" title="'+(t.preview_url?'Play 30s preview':'No preview available')+'"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
+    d.addEventListener('click', e => { if (!e.target.closest('.track-play-btn')) toggleTrack(t.id,prefix,d); });
+    const pb = d.querySelector('.track-play-btn');
+    if (pb && t.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(t); });
+    c.appendChild(d);
   });
+  updatePlayBtns();
 }
 
 function toggleTrack(id, prefix, el) {
@@ -637,9 +685,13 @@ function renderPlTracks(tracks, plId) {
       +'<div class="track-info"><div class="track-name">'+esc(t.name)+'</div><div class="track-artist">'+esc(t.artists?.map(a=>a.name).join(', '))+'</div></div>'
       +(t.explicit?'<span class="track-explicit">E</span>':'')
       +'<span class="track-duration">'+ms2time(t.duration_ms)+'</span>'
+      +'<button class="track-play-btn'+(t.preview_url?'':' no-preview')+'" data-track-id="'+esc(t.id)+'" title="'+(t.preview_url?'Play 30s preview':'No preview available')+'"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>'
       +'<button class="track-action-btn" data-uri="spotify:track:'+t.id+'" data-plid="'+plId+'">Remove</button>';
+    const pb = div.querySelector('.track-play-btn');
+    if (pb && t.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(t); });
     c.appendChild(div);
   });
+  updatePlayBtns();
   c.addEventListener('click', async e => {
     const btn=e.target.closest('.track-action-btn'); if (!btn) return;
     btn.disabled=true; btn.textContent='...';
@@ -661,7 +713,53 @@ async function createPlaylist() {
   btn.disabled=false; btn.textContent='Create playlist';
 }
 
+// PLAYER
+const audio = new Audio();
+let currentTrackId = null;
+const svgPlay = `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
+const svgPause = `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
+
+function playTrack(t) {
+  if (!t.preview_url) return;
+  if (currentTrackId === t.id) {
+    audio.paused ? audio.play() : audio.pause();
+    return;
+  }
+  currentTrackId = t.id;
+  audio.src = t.preview_url;
+  audio.play();
+  const art = t.album?.images?.[2]?.url || t.album?.images?.[0]?.url;
+  const playerArt = document.getElementById('player-art');
+  playerArt.innerHTML = art ? `<img src="${art}" />` : svgPlay;
+  document.getElementById('player-track-name').textContent = t.name;
+  document.getElementById('player-track-artist').textContent = t.artists?.map(a=>a.name).join(', ') || '';
+  document.getElementById('player-bar').classList.add('visible');
+  document.getElementById('screen-main').style.paddingBottom = '72px';
+}
+
+function updatePlayBtns() {
+  const playing = !audio.paused;
+  document.querySelectorAll('.track-play-btn').forEach(btn => {
+    const isThis = btn.dataset.trackId === currentTrackId;
+    btn.classList.toggle('playing', isThis && playing);
+    btn.innerHTML = (isThis && playing) ? svgPause : svgPlay;
+  });
+  document.getElementById('pp-icon').outerHTML = (playing ? svgPause : svgPlay).replace('<svg ', '<svg id="pp-icon" ');
+}
+
+audio.addEventListener('timeupdate', () => {
+  const pct = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('player-current').textContent = ms2time(audio.currentTime * 1000);
+  if (audio.duration) document.getElementById('player-duration').textContent = ms2time(audio.duration * 1000);
+});
+audio.addEventListener('ended', updatePlayBtns);
+audio.addEventListener('play', updatePlayBtns);
+audio.addEventListener('pause', updatePlayBtns);
+
 // Wire up events
+document.getElementById('btn-play-pause').addEventListener('click', () => { audio.paused ? audio.play() : audio.pause(); });
+document.getElementById('progress-bar').addEventListener('click', e => { if (!audio.duration) return; const r = e.currentTarget.getBoundingClientRect(); audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration; });
 document.getElementById('btn-connect').addEventListener('click', startAuth);
 document.getElementById('client-id-input').addEventListener('keydown', e => { if(e.key==='Enter') startAuth(); });
 document.getElementById('btn-logout').addEventListener('click', () => { store.del('sp_tok'); store.del('sp_exp'); showScreen('login'); });
