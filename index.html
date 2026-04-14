@@ -230,6 +230,17 @@
   .track-play-btn.playing { background: var(--green); border-color: var(--green); color: white; }
   .track-play-btn.no-preview { opacity: 0.25; cursor: not-allowed; pointer-events: none; }
   .track-play-btn svg { width: 12px; height: 12px; fill: currentColor; }
+
+  /* Word Playlist tab */
+  .word-input-row { display: flex; gap: 8px; margin-bottom: 1rem; }
+  .word-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 18px; font-weight: 600; color: var(--text); outline: none; letter-spacing: 4px; text-transform: uppercase; transition: border-color 0.15s; }
+  .word-input:focus { border-color: var(--green); }
+  .word-input::placeholder { font-size: 14px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--text3); }
+  .word-result-row { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: var(--radius-sm); transition: background 0.1s; }
+  .word-result-row:hover { background: var(--surface2); }
+  .word-letter { font-size: 20px; font-weight: 700; color: var(--green); width: 26px; text-align: center; flex-shrink: 0; font-family: monospace; line-height: 1; }
+  .word-arrow { font-size: 14px; color: var(--text3); flex-shrink: 0; }
+  .word-no-match { font-size: 13px; color: var(--text3); }
 </style>
 </head>
 <body>
@@ -294,6 +305,13 @@
         <button class="sidebar-btn" data-tab="tab-search">
           <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
           Search
+        </button>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tools</div>
+        <button class="sidebar-btn" data-tab="tab-word">
+          <svg viewBox="0 0 24 24"><path d="M2.5 4v3h5v12h3V7h5V4h-13zm19 5h-9v3h3v7h3v-7h3V9z"/></svg>
+          Word Playlist
         </button>
       </div>
       <div class="sidebar-section">
@@ -369,6 +387,22 @@
         <div id="srch-status" class="status"></div>
         <div id="srch-loader" class="inline-loader"><div class="spin"></div> Searching...</div>
         <div id="srch-list" class="track-list"></div>
+      </div>
+
+      <!-- WORD PLAYLIST -->
+      <div id="tab-word" class="tab">
+        <div class="tab-header">
+          <span class="tab-title">Word Playlist</span>
+        </div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.6;">Enter a word or name and get a song starting with each letter — type a name, a phrase, anything.</p>
+        <div class="word-input-row">
+          <input type="text" id="word-input" class="word-input" placeholder="e.g. Josh..." maxlength="30" />
+          <button class="btn-primary" id="btn-gen-word">Generate</button>
+        </div>
+        <div id="word-status" class="status"></div>
+        <div id="word-loader" class="inline-loader"><div class="spin"></div> Finding tracks...</div>
+        <div id="word-results" class="track-list" style="margin-bottom:1rem;"></div>
+        <button class="btn-primary" id="btn-save-word-pl" style="display:none;">Save as playlist</button>
       </div>
 
       <!-- PLAYLISTS -->
@@ -713,6 +747,93 @@ async function createPlaylist() {
   btn.disabled=false; btn.textContent='Create playlist';
 }
 
+// WORD PLAYLIST
+let wordTracks = [];
+
+async function generateWordPlaylist() {
+  const raw = document.getElementById('word-input').value.trim();
+  if (!raw) return;
+  const letters = raw.toUpperCase().replace(/[^A-Z]/g, '').split('');
+  if (!letters.length) return;
+
+  wordTracks = [];
+  setStatus('word-status', '');
+  loader('word-loader', true);
+  document.getElementById('word-results').innerHTML = '';
+  document.getElementById('btn-save-word-pl').style.display = 'none';
+
+  const usedIds = new Set();
+  for (const letter of letters) {
+    try {
+      const d = await api('/search?q=' + encodeURIComponent(letter) + '&type=track&limit=50');
+      const matches = (d.tracks?.items || []).filter(t =>
+        t && t.name && t.name[0].toUpperCase() === letter && !usedIds.has(t.id)
+      );
+      const track = matches[0] || null;
+      if (track) usedIds.add(track.id);
+      wordTracks.push({ letter, track });
+    } catch(e) {
+      wordTracks.push({ letter, track: null });
+    }
+  }
+
+  loader('word-loader', false);
+  renderWordResults();
+}
+
+function renderWordResults() {
+  const c = document.getElementById('word-results');
+  c.innerHTML = '';
+  const found = wordTracks.filter(w => w.track).length;
+  setStatus('word-status', found + ' of ' + wordTracks.length + ' letters matched');
+
+  wordTracks.forEach(({ letter, track }) => {
+    const div = document.createElement('div');
+    div.className = 'word-result-row';
+    if (track) {
+      const art = track.album?.images?.[2]?.url || track.album?.images?.[0]?.url;
+      div.innerHTML = '<span class="word-letter">' + letter + '</span>'
+        + '<span class="word-arrow">→</span>'
+        + (art ? '<img class="track-art" src="' + art + '" />' : '<div class="track-art-ph">' + musicNote + '</div>')
+        + '<div class="track-info"><div class="track-name">' + esc(track.name) + '</div>'
+        + '<div class="track-artist">' + esc(track.artists?.map(a => a.name).join(', ') || '') + ' · ' + esc(track.album?.name || '') + '</div></div>'
+        + (track.explicit ? '<span class="track-explicit">E</span>' : '')
+        + '<span class="track-duration">' + ms2time(track.duration_ms) + '</span>'
+        + '<button class="track-play-btn' + (track.preview_url ? '' : ' no-preview') + '" data-track-id="' + esc(track.id) + '" title="' + (track.preview_url ? 'Play 30s preview' : 'No preview available') + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
+      const pb = div.querySelector('.track-play-btn');
+      if (pb && track.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(track); });
+    } else {
+      div.innerHTML = '<span class="word-letter" style="opacity:0.35">' + letter + '</span>'
+        + '<span class="word-arrow" style="opacity:0.35">→</span>'
+        + '<span class="word-no-match">No track found</span>';
+    }
+    c.appendChild(div);
+  });
+
+  if (found > 0) document.getElementById('btn-save-word-pl').style.display = 'inline-block';
+  updatePlayBtns();
+}
+
+async function saveWordPlaylist() {
+  const input = document.getElementById('word-input').value.trim();
+  const tracks = wordTracks.filter(w => w.track).map(w => w.track);
+  if (!tracks.length || !userId) return;
+  const btn = document.getElementById('btn-save-word-pl');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const pl = await api('/users/' + userId + '/playlists', {
+      method: 'POST',
+      body: JSON.stringify({ name: '"' + input + '" Acrostic', description: 'Generated by Spotify Manager', public: false })
+    });
+    await api('/playlists/' + pl.id + '/tracks', { method: 'POST', body: JSON.stringify({ uris: tracks.map(t => 'spotify:track:' + t.id) }) });
+    setStatus('word-status', 'Playlist "' + input + ' Acrostic" saved!', 'success');
+    loadPlaylists();
+  } catch(e) {
+    setStatus('word-status', 'Error: ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = 'Save as playlist';
+}
+
 // PLAYER
 const audio = new Audio();
 let currentTrackId = null;
@@ -760,6 +881,9 @@ audio.addEventListener('pause', updatePlayBtns);
 // Wire up events
 document.getElementById('btn-play-pause').addEventListener('click', () => { audio.paused ? audio.play() : audio.pause(); });
 document.getElementById('progress-bar').addEventListener('click', e => { if (!audio.duration) return; const r = e.currentTarget.getBoundingClientRect(); audio.currentTime = ((e.clientX - r.left) / r.width) * audio.duration; });
+document.getElementById('btn-gen-word').addEventListener('click', generateWordPlaylist);
+document.getElementById('word-input').addEventListener('keydown', e => { if (e.key === 'Enter') generateWordPlaylist(); });
+document.getElementById('btn-save-word-pl').addEventListener('click', saveWordPlaylist);
 document.getElementById('btn-connect').addEventListener('click', startAuth);
 document.getElementById('client-id-input').addEventListener('keydown', e => { if(e.key==='Enter') startAuth(); });
 document.getElementById('btn-logout').addEventListener('click', () => { store.del('sp_tok'); store.del('sp_exp'); showScreen('login'); });
