@@ -241,6 +241,9 @@
   .word-letter { font-size: 20px; font-weight: 700; color: var(--green); width: 26px; text-align: center; flex-shrink: 0; font-family: monospace; line-height: 1; }
   .word-arrow { font-size: 14px; color: var(--text3); flex-shrink: 0; }
   .word-no-match { font-size: 13px; color: var(--text3); }
+  .word-match-count { font-size: 11px; color: var(--text3); flex-shrink: 0; white-space: nowrap; }
+  .btn-swap { width: 28px; height: 28px; border-radius: 50%; background: none; border: 1px solid var(--border2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; color: var(--text2); transition: all 0.15s; }
+  .btn-swap:hover { background: var(--surface3); color: var(--text); border-color: rgba(255,255,255,0.3); }
 </style>
 </head>
 <body>
@@ -748,8 +751,9 @@ async function createPlaylist() {
 }
 
 // WORD PLAYLIST
-let wordTracks = [];
+let wordTracks = []; // [{ letter, matches: Track[], idx: number }]
 let cachedLibrary = null;
+let wordSearchCache = {}; // letter -> Track[] (Spotify fallback results)
 
 async function loadFullLibrary() {
   if (cachedLibrary) return cachedLibrary;
@@ -787,31 +791,27 @@ async function generateWordPlaylist() {
     return;
   }
 
-  const usedIds = new Set();
   for (const letter of letters) {
-    // 1. Search liked songs first
-    const libMatch = library.find(t =>
-      t && t.name && t.name[0].toUpperCase() === letter && !usedIds.has(t.id)
-    );
-    if (libMatch) {
-      usedIds.add(libMatch.id);
-      wordTracks.push({ letter, track: libMatch });
+    // 1. All library matches for this letter
+    const libMatches = library.filter(t => t && t.name && t.name[0].toUpperCase() === letter);
+    if (libMatches.length > 0) {
+      wordTracks.push({ letter, matches: libMatches, idx: 0 });
       continue;
     }
 
-    // 2. Fall back to Spotify-wide search
-    setStatus('word-status', 'Searching Spotify for ' + letter + '...');
-    try {
-      const d = await api('/search?q=' + encodeURIComponent(letter) + '&type=track&limit=50');
-      const matches = (d.tracks?.items || []).filter(t =>
-        t && t.name && t.name[0].toUpperCase() === letter && !usedIds.has(t.id)
-      );
-      const track = matches[0] || null;
-      if (track) usedIds.add(track.id);
-      wordTracks.push({ letter, track });
-    } catch(e) {
-      wordTracks.push({ letter, track: null });
+    // 2. Fall back to Spotify-wide search (cached per letter)
+    if (!wordSearchCache[letter]) {
+      setStatus('word-status', 'Searching Spotify for ' + letter + '...');
+      try {
+        const d = await api('/search?q=' + encodeURIComponent(letter) + '&type=track&limit=50');
+        wordSearchCache[letter] = (d.tracks?.items || []).filter(t =>
+          t && t.name && t.name[0].toUpperCase() === letter
+        );
+      } catch(e) {
+        wordSearchCache[letter] = [];
+      }
     }
+    wordTracks.push({ letter, matches: wordSearchCache[letter], idx: 0 });
   }
 
   loader('word-loader', false);
@@ -821,26 +821,31 @@ async function generateWordPlaylist() {
 function renderWordResults() {
   const c = document.getElementById('word-results');
   c.innerHTML = '';
-  const found = wordTracks.filter(w => w.track).length;
+  const found = wordTracks.filter(w => w.matches.length > 0).length;
   setStatus('word-status', found + ' of ' + wordTracks.length + ' letters matched');
 
-  wordTracks.forEach(({ letter, track }) => {
+  wordTracks.forEach((w, i) => {
     const div = document.createElement('div');
     div.className = 'word-result-row';
+    const track = w.matches[w.idx] || null;
     if (track) {
       const art = track.album?.images?.[2]?.url || track.album?.images?.[0]?.url;
-      div.innerHTML = '<span class="word-letter">' + letter + '</span>'
+      div.innerHTML = '<span class="word-letter">' + w.letter + '</span>'
         + '<span class="word-arrow">→</span>'
         + (art ? '<img class="track-art" src="' + art + '" />' : '<div class="track-art-ph">' + musicNote + '</div>')
         + '<div class="track-info"><div class="track-name">' + esc(track.name) + '</div>'
         + '<div class="track-artist">' + esc(track.artists?.map(a => a.name).join(', ') || '') + ' · ' + esc(track.album?.name || '') + '</div></div>'
         + (track.explicit ? '<span class="track-explicit">E</span>' : '')
         + '<span class="track-duration">' + ms2time(track.duration_ms) + '</span>'
+        + (w.matches.length > 1 ? '<span class="word-match-count">' + (w.idx + 1) + '/' + w.matches.length + '</span>' : '')
+        + (w.matches.length > 1 ? '<button class="btn-swap" title="Try another song">↻</button>' : '')
         + '<button class="track-play-btn' + (track.preview_url ? '' : ' no-preview') + '" data-track-id="' + esc(track.id) + '" title="' + (track.preview_url ? 'Play 30s preview' : 'No preview available') + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
       const pb = div.querySelector('.track-play-btn');
       if (pb && track.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(track); });
+      const sb = div.querySelector('.btn-swap');
+      if (sb) sb.addEventListener('click', e => { e.stopPropagation(); w.idx = (w.idx + 1) % w.matches.length; renderWordResults(); });
     } else {
-      div.innerHTML = '<span class="word-letter" style="opacity:0.35">' + letter + '</span>'
+      div.innerHTML = '<span class="word-letter" style="opacity:0.35">' + w.letter + '</span>'
         + '<span class="word-arrow" style="opacity:0.35">→</span>'
         + '<span class="word-no-match">No track found</span>';
     }
@@ -853,7 +858,7 @@ function renderWordResults() {
 
 async function saveWordPlaylist() {
   const input = document.getElementById('word-input').value.trim();
-  const tracks = wordTracks.filter(w => w.track).map(w => w.track);
+  const tracks = wordTracks.map(w => w.matches[w.idx]).filter(Boolean);
   if (!tracks.length || !userId) return;
   const btn = document.getElementById('btn-save-word-pl');
   btn.disabled = true; btn.textContent = 'Saving...';
