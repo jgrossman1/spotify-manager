@@ -753,9 +753,9 @@ let cachedLibrary = null;
 
 async function loadFullLibrary() {
   if (cachedLibrary) return cachedLibrary;
-  setStatus('word-status', 'Scanning your liked songs...');
   let all = [], offset = 0;
   while (true) {
+    setStatus('word-status', 'Scanning liked songs... (' + all.length + ' loaded)');
     const d = await api('/me/tracks?limit=50&offset=' + offset);
     all = all.concat(d.items.map(i => i.track).filter(Boolean));
     if (!d.next) break;
@@ -778,7 +778,14 @@ async function generateWordPlaylist() {
   document.getElementById('btn-save-word-pl').style.display = 'none';
 
   let library = [];
-  try { library = await loadFullLibrary(); } catch(e) {}
+  try {
+    library = await loadFullLibrary();
+    setStatus('word-status', 'Loaded ' + library.length + ' liked songs, matching letters...');
+  } catch(e) {
+    setStatus('word-status', 'Could not load library: ' + e.message, 'error');
+    loader('word-loader', false);
+    return;
+  }
 
   const usedIds = new Set();
   for (const letter of letters) {
