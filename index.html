@@ -228,7 +228,8 @@
   .track-play-btn { width: 28px; height: 28px; border-radius: 50%; background: none; border: 1px solid var(--border2); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; color: var(--text2); }
   .track-play-btn:hover { background: var(--green); border-color: var(--green); color: white; }
   .track-play-btn.playing { background: var(--green); border-color: var(--green); color: white; }
-  .track-play-btn.no-preview { opacity: 0.25; cursor: not-allowed; pointer-events: none; }
+  .track-play-btn.no-preview { border-style: dashed; opacity: 0.6; }
+  .track-play-btn.no-preview:hover { background: var(--surface3); border-color: rgba(255,255,255,0.3); color: var(--text); }
   .track-play-btn svg { width: 12px; height: 12px; fill: currentColor; }
 
   /* Word Playlist tab */
@@ -587,10 +588,10 @@ function renderTracks(cid, tracks, prefix) {
       +'<div class="track-info"><div class="track-name">'+esc(t.name)+'</div><div class="track-artist">'+esc(t.artists?.map(a=>a.name).join(', '))+' · '+esc(t.album?.name||'')+'</div></div>'
       +(t.explicit?'<span class="track-explicit">E</span>':'')
       +'<span class="track-duration">'+ms2time(t.duration_ms)+'</span>'
-      +'<button class="track-play-btn'+(t.preview_url?'':' no-preview')+'" data-track-id="'+esc(t.id)+'" title="'+(t.preview_url?'Play 30s preview':'No preview available')+'"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
+      +'<button class="track-play-btn'+(t.preview_url?'':' no-preview')+'" data-track-id="'+esc(t.id)+'" title="'+(t.preview_url?'Play 30s preview':'Open in Spotify')+'"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
     d.addEventListener('click', e => { if (!e.target.closest('.track-play-btn')) toggleTrack(t.id,prefix,d); });
     const pb = d.querySelector('.track-play-btn');
-    if (pb && t.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(t); });
+    if (pb) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(t); });
     c.appendChild(d);
   });
   updatePlayBtns();
@@ -722,10 +723,10 @@ function renderPlTracks(tracks, plId) {
       +'<div class="track-info"><div class="track-name">'+esc(t.name)+'</div><div class="track-artist">'+esc(t.artists?.map(a=>a.name).join(', '))+'</div></div>'
       +(t.explicit?'<span class="track-explicit">E</span>':'')
       +'<span class="track-duration">'+ms2time(t.duration_ms)+'</span>'
-      +'<button class="track-play-btn'+(t.preview_url?'':' no-preview')+'" data-track-id="'+esc(t.id)+'" title="'+(t.preview_url?'Play 30s preview':'No preview available')+'"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>'
+      +'<button class="track-play-btn'+(t.preview_url?'':' no-preview')+'" data-track-id="'+esc(t.id)+'" title="'+(t.preview_url?'Play 30s preview':'Open in Spotify')+'"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>'
       +'<button class="track-action-btn" data-uri="spotify:track:'+t.id+'" data-plid="'+plId+'">Remove</button>';
     const pb = div.querySelector('.track-play-btn');
-    if (pb && t.preview_url) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(t); });
+    if (pb) pb.addEventListener('click', e => { e.stopPropagation(); playTrack(t); });
     c.appendChild(div);
   });
   updatePlayBtns();
@@ -840,7 +841,7 @@ function renderWordResults() {
         + '<span class="track-duration">' + ms2time(track.duration_ms) + '</span>'
         + (w.matches.length > 1 ? '<span class="word-match-count">' + (w.idx + 1) + '/' + w.matches.length + '</span>' : '')
         + (w.matches.length > 1 ? '<button class="btn-swap" title="Try another song">↻</button>' : '')
-        + '<button class="track-play-btn' + (track.preview_url ? '' : ' no-preview') + '" data-track-id="' + esc(track.id) + '" title="' + (track.preview_url ? 'Play 30s preview' : 'No preview available') + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
+        + '<button class="track-play-btn' + (track.preview_url ? '' : ' no-preview') + '" data-track-id="' + esc(track.id) + '" title="' + (track.preview_url ? 'Play 30s preview' : 'Open in Spotify') + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>';
     } else {
       div.innerHTML = '<span class="word-letter" style="opacity:0.35">' + w.letter + '</span>'
         + '<span class="word-arrow" style="opacity:0.35">→</span>'
@@ -880,14 +881,17 @@ const svgPlay = `<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>`;
 const svgPause = `<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`;
 
 function playTrack(t) {
-  if (!t.preview_url) return;
+  if (!t.preview_url) {
+    if (t.external_urls?.spotify) window.open(t.external_urls.spotify, '_blank');
+    return;
+  }
   if (currentTrackId === t.id) {
     audio.paused ? audio.play() : audio.pause();
     return;
   }
   currentTrackId = t.id;
   audio.src = t.preview_url;
-  audio.play();
+  audio.play().catch(() => {});
   const art = t.album?.images?.[2]?.url || t.album?.images?.[0]?.url;
   const playerArt = document.getElementById('player-art');
   playerArt.innerHTML = art ? `<img src="${art}" />` : svgPlay;
@@ -931,7 +935,7 @@ document.getElementById('word-results').addEventListener('click', e => {
   if (e.target.closest('.btn-swap')) {
     w.idx = (w.idx + 1) % w.matches.length;
     renderWordResults();
-  } else if (e.target.closest('.track-play-btn:not(.no-preview)')) {
+  } else if (e.target.closest('.track-play-btn')) {
     const track = w.matches[w.idx];
     if (track) playTrack(track);
   }
